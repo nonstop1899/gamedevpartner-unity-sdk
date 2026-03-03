@@ -1,0 +1,18 @@
+{
+  "name": "com.gamedevpartner.sdk",
+  "version": "1.0.0",
+  "displayName": "GameDevPartner SDK",
+  "description": "SDK for integrating GameDevPartner affiliate tracking into Unity games. Tracks installs, purchases, and influencer attribution.",
+  "unity": "2020.3",
+  "author": {
+    "name": "GameDevPartner",
+    "url": "https://gamedevpartner.ru"
+  },
+  "keywords": [
+    "affiliate",
+    "tracking",
+    "analytics",
+    "influencer",
+    "monetization"
+  ]
+}
