@@ -7,7 +7,8 @@ using UnityEngine.Networking;
 namespace GameDevPartner.SDK
 {
     /// <summary>
-    /// Main SDK entry point. Attach to a persistent GameObject or call Init() at game startup.
+    /// Main SDK entry point. Auto-initializes from GameDevPartnerConfig (Resources).
+    /// No manual Init() call needed — just configure via Window > GameDevPartner > Settings.
     /// </summary>
     public class GameDevPartnerSDK : MonoBehaviour
     {
@@ -16,6 +17,7 @@ namespace GameDevPartner.SDK
         private static bool _initialized;
         private static string _currentPlayerId;
         private static bool _identified;
+        private static bool _autoIdentify;
 
         private readonly Queue<PurchaseEvent> _offlineQueue = new Queue<PurchaseEvent>();
         private const int MaxQueueSize = 100;
@@ -24,7 +26,31 @@ namespace GameDevPartner.SDK
         private const string PlayerIdKey = "gdp_player_id";
 
         /// <summary>
-        /// Initialize the SDK. Call once at game startup (e.g., in Awake or Start).
+        /// Auto-initialize SDK from ScriptableObject config in Resources.
+        /// Called automatically before any scene loads.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void AutoInit()
+        {
+            var asset = GameDevPartnerConfig.Load();
+            if (asset == null)
+            {
+                // No config asset — SDK not configured, skip silently
+                return;
+            }
+
+            if (string.IsNullOrEmpty(asset.ApiKey))
+            {
+                Debug.LogWarning("[GameDevPartner] API Key not set. Configure via Window > GameDevPartner > Settings");
+                return;
+            }
+
+            _autoIdentify = asset.AutoIdentify;
+            Init(asset.ToSDKConfig());
+        }
+
+        /// <summary>
+        /// Initialize the SDK manually (optional — SDK auto-inits from config asset).
         /// </summary>
         public static void Init(SDKConfig config)
         {
@@ -58,6 +84,22 @@ namespace GameDevPartner.SDK
 
             // Flush offline queue
             _instance.StartCoroutine(_instance.FlushOfflineQueue());
+
+            // Auto-identify player using device unique ID
+            if (_autoIdentify && string.IsNullOrEmpty(_currentPlayerId))
+            {
+                string deviceId = SystemInfo.deviceUniqueIdentifier;
+                if (deviceId != SystemInfo.unsupportedIdentifier)
+                {
+                    Log($"Auto-identifying player with device ID");
+                    IdentifyPlayer(deviceId);
+                }
+            }
+            else if (_autoIdentify && !string.IsNullOrEmpty(_currentPlayerId) && !_identified)
+            {
+                Log($"Re-identifying previously known player");
+                IdentifyPlayer(_currentPlayerId);
+            }
         }
 
         /// <summary>

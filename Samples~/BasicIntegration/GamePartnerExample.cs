@@ -2,46 +2,21 @@ using UnityEngine;
 using GameDevPartner.SDK;
 
 /// <summary>
-/// Example integration of GameDevPartner SDK.
-/// Attach this script to a persistent GameObject in your first scene.
+/// Example: tracking purchases with GameDevPartner SDK.
+///
+/// SDK auto-initializes from settings (Window > GameDevPartner > Settings).
+/// You only need to call TrackPurchase() after each purchase.
 /// </summary>
 public class GamePartnerExample : MonoBehaviour
 {
-    [Header("GameDevPartner Settings")]
-    [SerializeField] private string gameId = "your_game_slug";
-    [SerializeField] private string apiKey = "sk_live_your_key_here";
-    [SerializeField] private bool debugMode = true;
-
-    private void Awake()
-    {
-        // Step 1: Initialize SDK at game startup
-        GameDevPartnerSDK.Init(new SDKConfig
-        {
-            GameId = gameId,
-            ApiKey = apiKey,
-            Region = SDKRegion.RU,
-            DebugMode = debugMode
-        });
-    }
-
-    /// <summary>
-    /// Call this after your player logs in or registers.
-    /// </summary>
-    public void OnPlayerLogin(string playerId)
-    {
-        // Step 2: Identify player for attribution
-        GameDevPartnerSDK.IdentifyPlayer(playerId);
-    }
-
     /// <summary>
     /// Call this after a successful in-app purchase.
+    /// This is the ONLY SDK call you need in your code.
     /// </summary>
-    public void OnPurchaseComplete(string playerId, string productId, float amount, string txId, string receipt)
+    public void OnPurchaseComplete(string productId, float amount, string txId, string receipt)
     {
-        // Step 3: Track the purchase
         GameDevPartnerSDK.TrackPurchase(new PurchaseEvent
         {
-            PlayerId = playerId,
             ProductId = productId,
             Amount = amount,
             Currency = "RUB",
