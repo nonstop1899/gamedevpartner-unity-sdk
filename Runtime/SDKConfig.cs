@@ -6,10 +6,7 @@ namespace GameDevPartner.SDK
     [System.Serializable]
     public class SDKConfig
     {
-        /// <summary>Game identifier (slug from developer dashboard)</summary>
-        public string GameId;
-
-        /// <summary>API key (sk_live_xxx for production, sk_test_xxx for testing)</summary>
+        /// <summary>API key from developer dashboard (API Key Live or API Key Test)</summary>
         public string ApiKey;
 
         /// <summary>Server region</summary>

@@ -54,7 +54,7 @@ namespace GameDevPartner.SDK
             _identified = PlayerPrefs.GetInt(AttributedKey, 0) == 1;
             _currentPlayerId = PlayerPrefs.GetString(PlayerIdKey, "");
 
-            Log($"SDK initialized. GameId={config.GameId}, Region={config.Region}, Debug={config.DebugMode}");
+            Log($"SDK initialized. Region={config.Region}, Debug={config.DebugMode}");
 
             // Flush offline queue
             _instance.StartCoroutine(_instance.FlushOfflineQueue());
