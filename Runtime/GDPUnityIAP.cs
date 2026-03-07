@@ -52,6 +52,11 @@ namespace GameDevPartner.SDK
             _inner.OnInitializeFailed(error);
         }
 
+        public void OnInitializeFailed(InitializationFailureReason error, string message)
+        {
+            _inner.OnInitializeFailed(error, message);
+        }
+
         public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
         {
             // Auto-track to GameDevPartner before passing to game code
