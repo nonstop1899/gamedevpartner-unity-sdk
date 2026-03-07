@@ -203,7 +203,7 @@ namespace GameDevPartner.SDK
                 product_id = purchase.ProductId,
                 gross_amount = purchase.Amount,
                 currency = purchase.Currency,
-                source = purchase.Source.ToString().ToLower(),
+                source = ToSourceString(purchase.Source),
                 external_tx_id = purchase.TransactionId,
                 receipt_data = purchase.ReceiptData
             };
@@ -240,7 +240,7 @@ namespace GameDevPartner.SDK
                     product_id = purchase.ProductId,
                     gross_amount = purchase.Amount,
                     currency = purchase.Currency,
-                    source = purchase.Source.ToString().ToLower(),
+                    source = ToSourceString(purchase.Source),
                     external_tx_id = purchase.TransactionId,
                     receipt_data = purchase.ReceiptData
                 };
@@ -381,6 +381,20 @@ namespace GameDevPartner.SDK
         #endregion
 
         #region Utility
+
+        private static string ToSourceString(PaymentSource source)
+        {
+            switch (source)
+            {
+                case PaymentSource.GooglePlay: return "google_play";
+                case PaymentSource.Apple: return "apple";
+                case PaymentSource.YooKassa: return "yookassa";
+                case PaymentSource.RuStore: return "rustore";
+                case PaymentSource.TBank: return "tbank";
+                case PaymentSource.Web: return "web";
+                default: return "other";
+            }
+        }
 
         private static bool EnsureInitialized()
         {
