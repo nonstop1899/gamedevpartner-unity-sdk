@@ -6,7 +6,10 @@ namespace GameDevPartner.SDK
     /// <summary>
     /// Automatically retrieves Install Referrer from Google Play and RuStore on Android.
     /// No manual setup needed — SDK calls this internally during IdentifyPlayer.
-    /// Requires install referrer libraries in gradle (added automatically via mainTemplate).
+    ///
+    /// Google Play: requires com.android.installreferrer:installreferrer library in gradle.
+    /// RuStore: uses RuStore Unity SDK InstallReferrerClient if present (via reflection).
+    /// Both are optional — SDK gracefully falls back if libraries are not present.
     /// </summary>
     internal static class GDPInstallReferrer
     {
@@ -35,7 +38,7 @@ namespace GameDevPartner.SDK
                 return;
             }
 
-            // Check PlayerPrefs first (referrer doesn't change)
+            // Check PlayerPrefs first (referrer doesn't change after install)
             string saved = PlayerPrefs.GetString("gdp_install_referrer", "");
             if (!string.IsNullOrEmpty(saved))
             {
@@ -70,19 +73,26 @@ namespace GameDevPartner.SDK
         }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
+
+        // =====================================================
+        // Google Play Install Referrer API
+        // Docs: https://developer.android.com/google/play/installreferrer/library
+        // Requires gradle: com.android.installreferrer:installreferrer:2.2
+        // =====================================================
+
         private static void TryGooglePlayReferrer(Action<string> onComplete)
         {
             try
             {
-                // com.android.installreferrer.api.InstallReferrerClient
                 var activity = new AndroidJavaClass("com.unity3d.player.UnityPlayer")
                     .GetStatic<AndroidJavaObject>("currentActivity");
 
+                // InstallReferrerClient.newBuilder(context).build()
                 var clientClass = new AndroidJavaClass("com.android.installreferrer.api.InstallReferrerClient");
                 var client = clientClass.CallStatic<AndroidJavaObject>("newBuilder", activity)
                     .Call<AndroidJavaObject>("build");
 
-                client.Call("startConnection", new InstallReferrerStateListener(client, onComplete));
+                client.Call("startConnection", new GooglePlayReferrerListener(client, onComplete));
             }
             catch (Exception ex)
             {
@@ -91,18 +101,171 @@ namespace GameDevPartner.SDK
             }
         }
 
+        /// <summary>
+        /// AndroidJavaProxy implementing com.android.installreferrer.api.InstallReferrerStateListener
+        /// </summary>
+        private class GooglePlayReferrerListener : AndroidJavaProxy
+        {
+            private readonly AndroidJavaObject _client;
+            private readonly Action<string> _onComplete;
+            private bool _completed;
+
+            public GooglePlayReferrerListener(AndroidJavaObject client, Action<string> onComplete)
+                : base("com.android.installreferrer.api.InstallReferrerStateListener")
+            {
+                _client = client;
+                _onComplete = onComplete;
+            }
+
+            // InstallReferrerStateListener.onInstallReferrerSetupFinished(int responseCode)
+            // responseCode: 0=OK, 1=FEATURE_NOT_SUPPORTED, 2=SERVICE_UNAVAILABLE
+            void onInstallReferrerSetupFinished(int responseCode)
+            {
+                if (_completed) return;
+                _completed = true;
+
+                try
+                {
+                    if (responseCode == 0) // InstallReferrerResponse.OK
+                    {
+                        // ReferrerDetails details = client.getInstallReferrer()
+                        var details = _client.Call<AndroidJavaObject>("getInstallReferrer");
+                        // String referrer = details.getInstallReferrer()
+                        string referrer = details.Call<string>("getInstallReferrer");
+                        Debug.Log($"[GameDevPartner] Google Play referrer: {referrer}");
+
+                        string parsed = ParseReferrerCode(referrer);
+                        _onComplete?.Invoke(parsed);
+                    }
+                    else
+                    {
+                        Debug.Log($"[GameDevPartner] Google Play referrer responseCode={responseCode}");
+                        _onComplete?.Invoke(null);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.Log($"[GameDevPartner] Google Play referrer error: {ex.Message}");
+                    _onComplete?.Invoke(null);
+                }
+                finally
+                {
+                    try { _client.Call("endConnection"); } catch { }
+                }
+            }
+
+            void onInstallReferrerServiceDisconnected()
+            {
+                // Service disconnected — no retry needed, one-time fetch
+                if (!_completed)
+                {
+                    _completed = true;
+                    _onComplete?.Invoke(null);
+                }
+            }
+        }
+
+        // =====================================================
+        // RuStore Install Referrer SDK (Unity C# API)
+        // Docs: https://www.rustore.ru/help/en/sdk/install-referrer/unity/9-0-2
+        // Uses reflection to avoid hard dependency on RuStore SDK package.
+        // API: InstallReferrerClient.Instance.Init()
+        //      InstallReferrerClient.Instance.GetInstallReferrer(onFailure, onSuccess)
+        //      result.referrerId -> the referrer string
+        // =====================================================
+
         private static void TryRuStoreReferrer(Action<string> onComplete)
         {
             try
             {
-                // ru.rustore.sdk.installreferrer.RuStoreInstallReferrerClient
-                var activity = new AndroidJavaClass("com.unity3d.player.UnityPlayer")
-                    .GetStatic<AndroidJavaObject>("currentActivity");
+                // Find RuStore InstallReferrerClient type via reflection
+                System.Type clientType = null;
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    clientType = asm.GetType("RuStore.InstallReferrer.InstallReferrerClient");
+                    if (clientType != null) break;
+                    // Try alternative namespace
+                    clientType = asm.GetType("RuStoreSdk.InstallReferrerClient");
+                    if (clientType != null) break;
+                }
 
-                var clientClass = new AndroidJavaClass("ru.rustore.sdk.installreferrer.RuStoreInstallReferrerClient");
-                var client = clientClass.CallStatic<AndroidJavaObject>("create", activity);
+                if (clientType == null)
+                {
+                    Debug.Log("[GameDevPartner] RuStore Install Referrer SDK not found");
+                    onComplete?.Invoke(null);
+                    return;
+                }
 
-                client.Call("startConnection", new RuStoreReferrerStateListener(client, onComplete));
+                // Get singleton: InstallReferrerClient.Instance
+                var instanceProp = clientType.GetProperty("Instance",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (instanceProp == null)
+                {
+                    Debug.Log("[GameDevPartner] RuStore InstallReferrerClient.Instance not found");
+                    onComplete?.Invoke(null);
+                    return;
+                }
+
+                var instance = instanceProp.GetValue(null);
+                if (instance == null)
+                {
+                    Debug.Log("[GameDevPartner] RuStore InstallReferrerClient.Instance is null");
+                    onComplete?.Invoke(null);
+                    return;
+                }
+
+                // Call Init()
+                var initMethod = clientType.GetMethod("Init");
+                if (initMethod != null)
+                    initMethod.Invoke(instance, null);
+
+                // Call GetInstallReferrer(onFailure, onSuccess)
+                var getMethod = clientType.GetMethod("GetInstallReferrer");
+                if (getMethod == null)
+                {
+                    Debug.Log("[GameDevPartner] RuStore GetInstallReferrer method not found");
+                    onComplete?.Invoke(null);
+                    return;
+                }
+
+                // Build callbacks using reflection to match delegate types
+                var methodParams = getMethod.GetParameters();
+                if (methodParams.Length >= 2)
+                {
+                    // onFailure callback
+                    var failureType = methodParams[0].ParameterType;
+                    var failureDelegate = CreateDelegateForAction(failureType, (object error) =>
+                    {
+                        Debug.Log($"[GameDevPartner] RuStore referrer error: {error}");
+                        onComplete?.Invoke(null);
+                    });
+
+                    // onSuccess callback
+                    var successType = methodParams[1].ParameterType;
+                    var successDelegate = CreateDelegateForAction(successType, (object result) =>
+                    {
+                        try
+                        {
+                            // result.referrerId
+                            var referrerProp = result.GetType().GetProperty("referrerId");
+                            string referrerId = referrerProp?.GetValue(result) as string;
+                            Debug.Log($"[GameDevPartner] RuStore referrer: {referrerId}");
+                            onComplete?.Invoke(referrerId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.Log($"[GameDevPartner] RuStore referrer parse error: {ex.Message}");
+                            onComplete?.Invoke(null);
+                        }
+                    });
+
+                    getMethod.Invoke(instance, new object[] { failureDelegate, successDelegate });
+                }
+                else
+                {
+                    Debug.Log("[GameDevPartner] RuStore GetInstallReferrer unexpected signature");
+                    onComplete?.Invoke(null);
+                }
             }
             catch (Exception ex)
             {
@@ -112,113 +275,45 @@ namespace GameDevPartner.SDK
         }
 
         /// <summary>
-        /// Callback listener for Google Play Install Referrer API.
+        /// Create a delegate matching the target Action-like type via reflection.
         /// </summary>
-        private class InstallReferrerStateListener : AndroidJavaProxy
+        private static Delegate CreateDelegateForAction(System.Type delegateType, Action<object> handler)
         {
-            private readonly AndroidJavaObject _client;
-            private readonly Action<string> _onComplete;
+            // Get the Invoke method to understand the delegate signature
+            var invokeMethod = delegateType.GetMethod("Invoke");
+            if (invokeMethod == null) return null;
 
-            public InstallReferrerStateListener(AndroidJavaObject client, Action<string> onComplete)
-                : base("com.android.installreferrer.api.InstallReferrerStateListener")
+            var invokeParams = invokeMethod.GetParameters();
+            if (invokeParams.Length == 1)
             {
-                _client = client;
-                _onComplete = onComplete;
+                // Create Action<T> where T is the parameter type
+                var paramType = invokeParams[0].ParameterType;
+                var actionType = typeof(Action<>).MakeGenericType(paramType);
+
+                // Use a wrapper that boxes the parameter
+                var wrapperMethod = typeof(GDPInstallReferrer)
+                    .GetMethod(nameof(InvokeObjectAction), System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+                // Store the handler in a closure-like approach
+                _tempActionHandler = handler;
+                return Delegate.CreateDelegate(delegateType, wrapperMethod.MakeGenericMethod(paramType));
             }
 
-            // Called on connection established
-            void onInstallReferrerSetupFinished(int responseCode)
-            {
-                try
-                {
-                    if (responseCode == 0) // OK
-                    {
-                        var details = _client.Call<AndroidJavaObject>("getInstallReferrer");
-                        string referrer = details.Call<string>("getInstallReferrer");
-                        Debug.Log($"[GameDevPartner] Google Play referrer: {referrer}");
-
-                        // Parse utm_content or gdp_ref from referrer string
-                        string parsed = ParseReferrerCode(referrer);
-                        _onComplete?.Invoke(parsed);
-                    }
-                    else
-                    {
-                        Debug.Log($"[GameDevPartner] Google Play referrer response code: {responseCode}");
-                        _onComplete?.Invoke(null);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.Log($"[GameDevPartner] Google Play referrer parse error: {ex.Message}");
-                    _onComplete?.Invoke(null);
-                }
-                finally
-                {
-                    try { _client.Call("endConnection"); } catch { }
-                }
-            }
-
-            void onInstallReferrerServiceDisconnected()
-            {
-                // Connection lost, no-op
-            }
+            return null;
         }
 
-        /// <summary>
-        /// Callback listener for RuStore Install Referrer API.
-        /// </summary>
-        private class RuStoreReferrerStateListener : AndroidJavaProxy
+        private static Action<object> _tempActionHandler;
+
+        private static void InvokeObjectAction<T>(T value)
         {
-            private readonly AndroidJavaObject _client;
-            private readonly Action<string> _onComplete;
-
-            public RuStoreReferrerStateListener(AndroidJavaObject client, Action<string> onComplete)
-                : base("ru.rustore.sdk.installreferrer.RuStoreInstallReferrerStateListener")
-            {
-                _client = client;
-                _onComplete = onComplete;
-            }
-
-            void onInstallReferrerSetupFinished(int responseCode)
-            {
-                try
-                {
-                    if (responseCode == 0) // OK
-                    {
-                        var details = _client.Call<AndroidJavaObject>("getInstallReferrer");
-                        string referrer = details.Call<string>("getInstallReferrer");
-                        Debug.Log($"[GameDevPartner] RuStore referrer: {referrer}");
-
-                        string parsed = ParseReferrerCode(referrer);
-                        _onComplete?.Invoke(parsed);
-                    }
-                    else
-                    {
-                        _onComplete?.Invoke(null);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.Log($"[GameDevPartner] RuStore referrer parse error: {ex.Message}");
-                    _onComplete?.Invoke(null);
-                }
-                finally
-                {
-                    try { _client.Call("endConnection"); } catch { }
-                }
-            }
-
-            void onInstallReferrerServiceDisconnected()
-            {
-                // Connection lost, no-op
-            }
+            _tempActionHandler?.Invoke(value);
         }
+
 #endif
 
         /// <summary>
         /// Parse referrer string to extract GameDevPartner link code.
-        /// Referrer format from store: "utm_source=gamedevpartner&utm_content=aBcD1f2&utm_medium=influencer"
-        /// or just the raw link code.
+        /// Google Play format: "utm_source=gamedevpartner&amp;utm_content=aBcD1f2&amp;utm_medium=influencer"
+        /// RuStore format: just the referrerId string directly.
         /// </summary>
         internal static string ParseReferrerCode(string referrer)
         {
@@ -246,10 +341,11 @@ namespace GameDevPartner.SDK
                 }
             }
 
-            // If it looks like a short code (base64url, 8 chars), return as-is
-            if (referrer.Length <= 12 && !referrer.Contains("=") && !referrer.Contains("&"))
+            // If short code (no key=value format), return as-is (RuStore referrerId)
+            if (referrer.Length <= 16 && !referrer.Contains("=") && !referrer.Contains("&"))
                 return referrer;
 
+            // Return full string as fallback (server can parse it)
             return referrer;
         }
 
