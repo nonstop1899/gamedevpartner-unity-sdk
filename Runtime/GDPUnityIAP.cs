@@ -52,11 +52,6 @@ namespace GameDevPartner.SDK
             _inner.OnInitializeFailed(error);
         }
 
-        public void OnInitializeFailed(InitializationFailureReason error, string message)
-        {
-            _inner.OnInitializeFailed(error, message);
-        }
-
         public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
         {
             // Auto-track to GameDevPartner before passing to game code
@@ -88,11 +83,6 @@ namespace GameDevPartner.SDK
         public void OnPurchaseFailed(Product product, PurchaseFailureReason failureReason)
         {
             _inner.OnPurchaseFailed(product, failureReason);
-        }
-
-        public void OnPurchaseFailed(Product product, PurchaseFailureDescription failureDescription)
-        {
-            _inner.OnPurchaseFailed(product, failureDescription);
         }
     }
 }
