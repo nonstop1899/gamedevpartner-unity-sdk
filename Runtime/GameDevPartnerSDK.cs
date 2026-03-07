@@ -85,21 +85,28 @@ namespace GameDevPartner.SDK
             // Flush offline queue
             _instance.StartCoroutine(_instance.FlushOfflineQueue());
 
-            // Auto-identify player using device unique ID
-            if (_autoIdentify && string.IsNullOrEmpty(_currentPlayerId))
+            // Fetch install referrer in background (Google Play / RuStore)
+            GDPInstallReferrer.FetchReferrer((referrer) =>
             {
-                string deviceId = SystemInfo.deviceUniqueIdentifier;
-                if (deviceId != SystemInfo.unsupportedIdentifier)
+                if (!string.IsNullOrEmpty(referrer))
+                    Log($"Install referrer obtained: {referrer}");
+
+                // Auto-identify player using device unique ID + referrer
+                if (_autoIdentify && string.IsNullOrEmpty(_currentPlayerId))
                 {
-                    Log($"Auto-identifying player with device ID");
-                    IdentifyPlayer(deviceId);
+                    string deviceId = SystemInfo.deviceUniqueIdentifier;
+                    if (deviceId != SystemInfo.unsupportedIdentifier)
+                    {
+                        Log($"Auto-identifying player with device ID");
+                        IdentifyPlayer(deviceId, referrer);
+                    }
                 }
-            }
-            else if (_autoIdentify && !string.IsNullOrEmpty(_currentPlayerId) && !_identified)
-            {
-                Log($"Re-identifying previously known player");
-                IdentifyPlayer(_currentPlayerId);
-            }
+                else if (_autoIdentify && !string.IsNullOrEmpty(_currentPlayerId) && !_identified)
+                {
+                    Log($"Re-identifying previously known player");
+                    IdentifyPlayer(_currentPlayerId, referrer);
+                }
+            });
         }
 
         /// <summary>
@@ -114,6 +121,10 @@ namespace GameDevPartner.SDK
                 Debug.LogError("[GameDevPartner] playerId is required");
                 return;
             }
+
+            // Auto-fill referrer from Install Referrer API if not provided
+            if (string.IsNullOrEmpty(referrer))
+                referrer = GDPInstallReferrer.GetCachedReferrer();
 
             // Cache player ID
             _currentPlayerId = playerId;
