@@ -77,7 +77,7 @@ namespace GameDevPartner.SDK
             }
 
             _initialized = true;
-            _identified = PlayerPrefs.GetInt(AttributedKey, 0) == 1;
+            _identified = false; // Always re-identify — server handles dedup
             _currentPlayerId = PlayerPrefs.GetString(PlayerIdKey, "");
 
             Log($"SDK initialized. Region={config.Region}, Debug={config.DebugMode}");
@@ -101,7 +101,7 @@ namespace GameDevPartner.SDK
                         IdentifyPlayer(deviceId, referrer);
                     }
                 }
-                else if (_autoIdentify && !string.IsNullOrEmpty(_currentPlayerId) && !_identified)
+                else if (_autoIdentify && !string.IsNullOrEmpty(_currentPlayerId))
                 {
                     Log($"Re-identifying previously known player");
                     IdentifyPlayer(_currentPlayerId, referrer);
@@ -129,13 +129,6 @@ namespace GameDevPartner.SDK
             // Cache player ID
             _currentPlayerId = playerId;
             PlayerPrefs.SetString(PlayerIdKey, playerId);
-
-            // Skip if already attributed
-            if (_identified && PlayerPrefs.GetString(PlayerIdKey) == playerId)
-            {
-                Log($"Player {playerId} already attributed, skipping");
-                return;
-            }
 
             _instance.StartCoroutine(_instance.DoIdentify(playerId, referrer));
         }
