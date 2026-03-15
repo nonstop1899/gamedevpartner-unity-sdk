@@ -29,6 +29,13 @@ namespace GameDevPartner.SDK
         public string receipt_data;
     }
 
+    [Serializable]
+    internal class SessionRequest
+    {
+        public string player_id;
+        public string platform;
+    }
+
     // --- Response DTOs (deserialized from JSON) ---
 
     [Serializable]

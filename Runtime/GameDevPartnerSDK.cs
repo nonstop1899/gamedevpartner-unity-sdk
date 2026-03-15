@@ -160,6 +160,36 @@ namespace GameDevPartner.SDK
 
         #region Internal Coroutines
 
+        /// <summary>
+        /// Track app session (app_open) — sent automatically after identify.
+        /// Server records one entry per player per day for retention analytics.
+        /// </summary>
+        private IEnumerator DoTrackSession()
+        {
+            if (string.IsNullOrEmpty(_currentPlayerId)) yield break;
+
+            var body = new SessionRequest
+            {
+                player_id = _currentPlayerId,
+                platform = GetPlatform()
+            };
+
+            string json = JsonUtility.ToJson(body);
+            Log($"Session: {json}");
+
+            using var request = CreatePost("/sdk/session", json);
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                Log("Session tracked");
+            }
+            else
+            {
+                Log($"Session tracking failed (non-critical): {request.error}");
+            }
+        }
+
         private IEnumerator DoIdentify(string playerId, string referrer)
         {
             var body = new IdentifyRequest
@@ -192,6 +222,9 @@ namespace GameDevPartner.SDK
                 {
                     Log("Player not attributed (organic)");
                 }
+
+                // Track session (app open) for retention analytics
+                StartCoroutine(DoTrackSession());
             }
             else
             {
