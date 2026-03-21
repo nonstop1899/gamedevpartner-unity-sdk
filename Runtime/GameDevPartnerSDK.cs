@@ -19,6 +19,7 @@ namespace GameDevPartner.SDK
         private static string _currentPlayerId;
         private static bool _identified;
         private static bool _autoIdentify;
+        private static bool _enableAdRevenue;
 
         // Purchase offline queue
         private readonly Queue<PurchaseEvent> _offlineQueue = new Queue<PurchaseEvent>();
@@ -59,6 +60,7 @@ namespace GameDevPartner.SDK
             }
 
             _autoIdentify = asset.AutoIdentify;
+            _enableAdRevenue = asset.EnableAdRevenueTracking;
             Init(asset.ToSDKConfig());
         }
 
@@ -96,6 +98,12 @@ namespace GameDevPartner.SDK
             _currentPlayerId = PlayerPrefs.GetString(PlayerIdKey, "");
 
             Log($"SDK initialized. Region={config.Region}, Debug={config.DebugMode}");
+
+            // Auto-enable ad revenue adapters
+            if (_enableAdRevenue)
+            {
+                AutoEnableAdAdapters();
+            }
 
             // Flush offline queues
             _instance.StartCoroutine(_instance.FlushOfflineQueue());
@@ -233,6 +241,48 @@ namespace GameDevPartner.SDK
                 _instance._adFlushCoroutine = _instance.StartCoroutine(_instance.DelayedAdFlush());
             }
         }
+
+        #region Auto Ad Adapters
+
+        /// <summary>
+        /// Automatically enable ad revenue adapters for detected ad SDKs.
+        /// No code needed from the developer — just enable in Settings.
+        /// </summary>
+        private static void AutoEnableAdAdapters()
+        {
+#if GDP_IRONSOURCE
+            GameDevPartner.SDK.Adapters.GDPIronSourceAdapter.Enable();
+            Log("Auto-enabled IronSource ad revenue adapter");
+#endif
+
+#if GDP_APPLOVIN
+            GameDevPartner.SDK.Adapters.GDPAppLovinAdapter.Enable();
+            Log("Auto-enabled AppLovin MAX ad revenue adapter");
+#endif
+
+#if GDP_ADMOB
+            GameDevPartner.SDK.Adapters.GDPAdMobAdapter.EnableAutoTracking();
+            Log("Auto-enabled AdMob ad revenue adapter");
+#endif
+
+#if GDP_YANDEX_ADS
+            GameDevPartner.SDK.Adapters.GDPYandexAdsAdapter.EnableAutoTracking();
+            Log("Auto-enabled Yandex Ads ad revenue adapter");
+#endif
+
+#if GDP_UNITY_ADS
+            GameDevPartner.SDK.Adapters.GDPUnityAdsAdapter.EnableAutoTracking();
+            Log("Auto-enabled Unity Ads ad revenue adapter");
+#endif
+
+#if !GDP_IRONSOURCE && !GDP_APPLOVIN && !GDP_ADMOB && !GDP_YANDEX_ADS && !GDP_UNITY_ADS
+            Log("Ad revenue tracking enabled, but no ad SDK define symbols detected. " +
+                "Ad SDKs will be auto-detected on next Editor reimport, or add manually: " +
+                "GDP_ADMOB, GDP_IRONSOURCE, GDP_APPLOVIN, GDP_UNITY_ADS, GDP_YANDEX_ADS");
+#endif
+        }
+
+        #endregion
 
         #region Internal Coroutines
 

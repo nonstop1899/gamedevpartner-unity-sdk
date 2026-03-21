@@ -5,20 +5,33 @@ using UnityEngine;
 namespace GameDevPartner.SDK.Adapters
 {
     /// <summary>
-    /// Yandex Mobile Ads adapter for automatic ad revenue tracking.
-    /// Hooks into impression data callbacks from Yandex Ads SDK.
+    /// Yandex Mobile Ads adapter for ad revenue tracking.
     ///
-    /// Usage:
-    ///   1. Add GDP_YANDEX_ADS to Scripting Define Symbols
-    ///   2. Call GDPYandexAdsAdapter.TrackRewarded(rewardedAd) after creating the ad
-    ///   3. Call GDPYandexAdsAdapter.TrackInterstitial(interstitialAd)
-    ///   4. Call GDPYandexAdsAdapter.TrackBanner(bannerAd)
+    /// AUTO MODE (recommended):
+    ///   SDK calls EnableAutoTracking() automatically. Logs that tracking is active.
+    ///   Developer calls TrackFromImpressionData() from their ad OnImpression callback.
+    ///
+    /// Minimal integration (1 line per ad type):
+    ///   rewardedAd.OnImpression += (_, data) =>
+    ///       GDPYandexAdsAdapter.TrackFromImpressionData(AdType.Rewarded, adUnitId, data);
     /// </summary>
     public static class GDPYandexAdsAdapter
     {
+        private static bool _autoEnabled;
+
         /// <summary>
-        /// Track rewarded ad revenue from Yandex Ads.
-        /// Pass the ad object's OnAdImpression event data.
+        /// Called automatically by SDK. Marks adapter as active.
+        /// </summary>
+        public static void EnableAutoTracking()
+        {
+            if (_autoEnabled) return;
+            _autoEnabled = true;
+            Debug.Log("[GameDevPartner] Yandex Ads tracking enabled. " +
+                      "Call TrackFromImpressionData() from your ad OnImpression callbacks.");
+        }
+
+        /// <summary>
+        /// Track ad impression with known revenue.
         /// </summary>
         public static void TrackImpression(AdType adType, string adUnitId, double revenue, string currency = "USD")
         {
@@ -38,17 +51,12 @@ namespace GameDevPartner.SDK.Adapters
         /// Track impression from Yandex ImpressionData JSON.
         /// Call this from your ad's OnImpression callback.
         /// </summary>
-        /// <param name="adType">Type of ad</param>
-        /// <param name="adUnitId">Ad unit ID</param>
-        /// <param name="impressionDataJson">Raw JSON from Yandex ImpressionData</param>
         public static void TrackFromImpressionData(AdType adType, string adUnitId, string impressionDataJson)
         {
             if (string.IsNullOrEmpty(impressionDataJson)) return;
 
             try
             {
-                // Parse minimal fields from Yandex impression data JSON
-                // Format: {"revenue": 0.001234, "currency": "USD", ...}
                 var data = JsonUtility.FromJson<YandexImpressionData>(impressionDataJson);
                 if (data.revenue > 0)
                 {

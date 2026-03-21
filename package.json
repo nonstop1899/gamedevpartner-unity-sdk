@@ -1,6 +1,6 @@
 {
   "name": "com.gamedevpartner.sdk",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "displayName": "GameDevPartner SDK",
   "description": "SDK for integrating GameDevPartner affiliate tracking into Unity games. Tracks installs, purchases, and influencer attribution.",
   "unity": "2020.3",

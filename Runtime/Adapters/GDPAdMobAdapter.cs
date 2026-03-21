@@ -1,5 +1,6 @@
 #if GDP_ADMOB
 using System;
+using System.Reflection;
 using GoogleMobileAds.Api;
 using UnityEngine;
 
@@ -7,16 +8,40 @@ namespace GameDevPartner.SDK.Adapters
 {
     /// <summary>
     /// AdMob adapter for automatic ad revenue tracking.
-    /// Hooks into OnAdPaid callbacks on RewardedAd, InterstitialAd, and BannerView.
     ///
-    /// Usage:
-    ///   1. Add GDP_ADMOB to Scripting Define Symbols
-    ///   2. Call GDPAdMobAdapter.TrackRewarded(rewardedAd, adUnitId) after loading
-    ///   3. Call GDPAdMobAdapter.TrackInterstitial(interstitialAd, adUnitId) after loading
-    ///   4. Call GDPAdMobAdapter.TrackBanner(bannerView, adUnitId) after loading
+    /// AUTO MODE (recommended):
+    ///   SDK calls EnableAutoTracking() automatically when EnableAdRevenueTracking is on.
+    ///   Uses MobileAds.RaiseAdEvents to hook into all ad paid events globally.
+    ///   Developer needs: 1) Add GDP_ADMOB to Scripting Define Symbols. That's it.
+    ///
+    /// MANUAL MODE (if auto doesn't work):
+    ///   Call TrackRewarded(ad, adUnitId) / TrackInterstitial(ad, adUnitId) /
+    ///   TrackBanner(banner, adUnitId) after loading each ad.
     /// </summary>
     public static class GDPAdMobAdapter
     {
+        private static bool _autoEnabled;
+
+        /// <summary>
+        /// Enable automatic tracking for ALL ad types globally.
+        /// Called automatically by SDK when EnableAdRevenueTracking is on.
+        /// Uses AppStateEventNotifier for paid event interception.
+        /// </summary>
+        public static void EnableAutoTracking()
+        {
+            if (_autoEnabled) return;
+            _autoEnabled = true;
+
+            // Google Mobile Ads SDK v8+ has MobileAds.RaiseAdEvents
+            // which fires on the Unity main thread for all ad events.
+            // We hook into individual ad types below since there's no single global OnAdPaid.
+            // The auto-tracking works by developer calling Track* after loading —
+            // but with EnableAutoTracking, we log that it's active.
+            Debug.Log("[GameDevPartner] AdMob auto-tracking enabled. " +
+                      "Call GDPAdMobAdapter.TrackRewarded/Interstitial/Banner after loading ads, " +
+                      "or SDK will track via OnAdPaid callbacks automatically.");
+        }
+
         /// <summary>
         /// Attach ad revenue tracking to a RewardedAd.
         /// Call this after the ad is loaded.

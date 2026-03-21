@@ -26,6 +26,10 @@ namespace GameDevPartner.SDK
         [Header("Auto-identify player using device ID")]
         public bool AutoIdentify = true;
 
+        [Header("Ad Revenue Tracking (автоматический)")]
+        [Tooltip("Автоматически трекать рекламный доход. SDK сам определит установленные рекламные сети.")]
+        public bool EnableAdRevenueTracking = true;
+
         /// <summary>Load config from Resources at runtime.</summary>
         public static GameDevPartnerConfig Load()
         {
