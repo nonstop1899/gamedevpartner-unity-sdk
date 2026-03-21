@@ -242,6 +242,52 @@ namespace GameDevPartner.SDK
             }
         }
 
+        /// <summary>
+        /// Simplified ad revenue tracking — no adapter needed, no Define Symbols.
+        /// Works with any ad network, including Yandex mediation via code.
+        ///
+        /// Usage (one line):
+        ///   GameDevPartnerSDK.TrackAdRevenue(revenue, "USD", "rewarded", "yandex_ads", "ad_unit_123");
+        ///
+        /// Valid adType: "rewarded", "interstitial", "banner"
+        /// Valid adNetwork: "admob", "ironsource", "applovin", "unity_ads", "yandex_ads", "other"
+        /// </summary>
+        public static void TrackAdRevenue(double revenue, string currency = "USD",
+            string adType = "rewarded", string adNetwork = "other", string adUnitId = "")
+        {
+            if (!EnsureInitialized()) return;
+            if (revenue <= 0) return;
+
+            AdType parsedType;
+            switch (adType?.ToLower())
+            {
+                case "rewarded": parsedType = AdType.Rewarded; break;
+                case "interstitial": parsedType = AdType.Interstitial; break;
+                case "banner": parsedType = AdType.Banner; break;
+                default: parsedType = AdType.Rewarded; break;
+            }
+
+            AdNetwork parsedNetwork;
+            switch (adNetwork?.ToLower())
+            {
+                case "admob": parsedNetwork = AdNetwork.AdMob; break;
+                case "ironsource": parsedNetwork = AdNetwork.IronSource; break;
+                case "applovin": parsedNetwork = AdNetwork.AppLovin; break;
+                case "unity_ads": parsedNetwork = AdNetwork.UnityAds; break;
+                case "yandex_ads": case "yandex": parsedNetwork = AdNetwork.YandexAds; break;
+                default: parsedNetwork = AdNetwork.Other; break;
+            }
+
+            TrackAdImpression(new AdImpressionEvent
+            {
+                AdType = parsedType,
+                AdNetwork = parsedNetwork,
+                AdUnitId = adUnitId,
+                Revenue = revenue,
+                Currency = currency,
+            });
+        }
+
         #region Auto Ad Adapters
 
         /// <summary>
