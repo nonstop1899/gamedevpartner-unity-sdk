@@ -31,6 +31,9 @@ namespace GameDevPartner.SDK
 
         /// <summary>Timestamp (auto-set on creation)</summary>
         public string Timestamp = DateTime.UtcNow.ToString("o");
+
+        /// <summary>Internal retry counter (not serialized to JSON)</summary>
+        [NonSerialized] internal int _retryCount;
     }
 
     public enum PaymentSource

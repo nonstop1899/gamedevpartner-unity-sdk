@@ -362,7 +362,7 @@ namespace GameDevPartner.SDK
             }
         }
 
-        private IEnumerator DoIdentify(string playerId, string referrer)
+        private IEnumerator DoIdentify(string playerId, string referrer, int retryAttempt = 0)
         {
             var body = new IdentifyRequest
             {
@@ -384,7 +384,7 @@ namespace GameDevPartner.SDK
             if (request.result == UnityWebRequest.Result.Success)
             {
                 var response = JsonUtility.FromJson<IdentifyResponse>(request.downloadHandler.text);
-                if (response.data.attributed)
+                if (response?.data != null && response.data.attributed)
                 {
                     _identified = true;
                     PlayerPrefs.SetInt(AttributedKey, 1);
@@ -401,6 +401,14 @@ namespace GameDevPartner.SDK
             else
             {
                 Debug.LogWarning($"[GameDevPartner] Identify failed: {request.error}");
+                // Retry up to 3 times with exponential backoff
+                if (retryAttempt < 3)
+                {
+                    float delay = Mathf.Pow(2, retryAttempt + 1); // 2s, 4s, 8s
+                    Log($"Retrying identify in {delay}s (attempt {retryAttempt + 1}/3)");
+                    yield return new WaitForSeconds(delay);
+                    StartCoroutine(DoIdentify(playerId, referrer, retryAttempt + 1));
+                }
             }
         }
 
@@ -426,6 +434,14 @@ namespace GameDevPartner.SDK
             if (request.result == UnityWebRequest.Result.Success)
             {
                 Log($"Purchase tracked: {request.downloadHandler.text}");
+            }
+            else if (IsRetryableError(request) && purchase._retryCount < 2)
+            {
+                purchase._retryCount++;
+                float delay = Mathf.Pow(2, purchase._retryCount); // 2s, 4s
+                Log($"Purchase tracking failed, retrying in {delay}s (attempt {purchase._retryCount}/2)");
+                yield return new WaitForSeconds(delay);
+                StartCoroutine(DoTrackPurchase(purchase));
             }
             else
             {
@@ -517,7 +533,10 @@ namespace GameDevPartner.SDK
             if (request.result == UnityWebRequest.Result.Success)
             {
                 var response = JsonUtility.FromJson<AdRevenueResponse>(request.downloadHandler.text);
-                Log($"Ad batch sent: stored={response.data.stored}, skipped={response.data.skipped}");
+                if (response?.data != null)
+                    Log($"Ad batch sent: stored={response.data.stored}, skipped={response.data.skipped}");
+                else
+                    Log($"Ad batch sent (response: {request.downloadHandler.text})");
             }
             else
             {
@@ -590,6 +609,15 @@ namespace GameDevPartner.SDK
         #endregion
 
         #region HTTP Helpers
+
+        /// <summary>Check if the error is retryable (network error or 5xx server error)</summary>
+        private static bool IsRetryableError(UnityWebRequest request)
+        {
+            if (request.result == UnityWebRequest.Result.ConnectionError) return true;
+            if (request.responseCode >= 500 && request.responseCode < 600) return true;
+            if (request.responseCode == 429) return true; // rate limited
+            return false;
+        }
 
         private UnityWebRequest CreatePost(string path, string json)
         {
