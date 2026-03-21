@@ -6,93 +6,84 @@ using UnityEngine;
 namespace GameDevPartner.SDK.Editor
 {
     /// <summary>
-    /// Automatically detects installed ad SDKs and manages Scripting Define Symbols.
-    /// Runs on every script recompilation (when assemblies are reloaded).
-    /// Developer doesn't need to manually add GDP_ADMOB etc. — it's automatic.
+    /// Manages Scripting Define Symbols for ad SDK adapters.
+    /// Provides methods to add/remove defines via the Settings UI.
+    /// Does NOT auto-add symbols — developer controls which adapters are active.
     /// </summary>
-    [InitializeOnLoad]
     public static class GDPDefineSymbolsManager
     {
-        // Map: define symbol → type to check for (fully qualified)
-        private static readonly Dictionary<string, string> AdSdkDetection = new Dictionary<string, string>
-        {
-            { "GDP_ADMOB",       "GoogleMobileAds.Api.MobileAds" },
-            { "GDP_IRONSOURCE",  "IronSourceEvents" },
-            { "GDP_APPLOVIN",    "MaxSdkCallbacks" },
-            { "GDP_UNITY_ADS",   "UnityEngine.Advertisements.Advertisement" },
-            { "GDP_YANDEX_ADS",  "YandexMobileAds.Base.AdValue" },
+        public static readonly string[] AdDefineSymbols = {
+            "GDP_ADMOB",
+            "GDP_IRONSOURCE",
+            "GDP_APPLOVIN",
+            "GDP_UNITY_ADS",
+            "GDP_YANDEX_ADS",
         };
 
-        static GDPDefineSymbolsManager()
+        public static readonly Dictionary<string, string> AdSdkLabels = new Dictionary<string, string>
         {
-            // Run after compilation finishes
-            EditorApplication.delayCall += SyncDefineSymbols;
+            { "GDP_ADMOB",       "AdMob (Google Mobile Ads)" },
+            { "GDP_IRONSOURCE",  "IronSource / LevelPlay" },
+            { "GDP_APPLOVIN",    "AppLovin MAX" },
+            { "GDP_UNITY_ADS",   "Unity Ads" },
+            { "GDP_YANDEX_ADS",  "Yandex Mobile Ads" },
+        };
+
+        public static readonly Dictionary<string, string> AdSdkHints = new Dictionary<string, string>
+        {
+            { "GDP_ADMOB",       "После загрузки рекламы: GDPAdMobAdapter.TrackRewarded(ad)" },
+            { "GDP_IRONSOURCE",  "Полностью автоматически — ноль кода" },
+            { "GDP_APPLOVIN",    "Полностью автоматически — ноль кода" },
+            { "GDP_UNITY_ADS",   "В callback: GDPUnityAdsAdapter.TrackShowComplete(id)" },
+            { "GDP_YANDEX_ADS",  "В callback: GDPYandexAdsAdapter.TrackFromImpressionData(...)" },
+        };
+
+        public static bool HasDefine(string symbol)
+        {
+            return GetCurrentDefines().Contains(symbol);
         }
 
-        /// <summary>
-        /// Check which ad SDKs are installed and add/remove define symbols.
-        /// </summary>
-        public static void SyncDefineSymbols()
+        public static void SetDefine(string symbol, bool enabled)
         {
-            var config = GameDevPartnerConfig.GetOrCreate();
-            if (!config.EnableAdRevenueTracking) return;
+            var defines = GetCurrentDefines();
+            bool has = defines.Contains(symbol);
 
+            if (enabled && !has)
+            {
+                defines.Add(symbol);
+                ApplyDefines(defines);
+                Debug.Log($"[GameDevPartner] Включён адаптер {symbol}");
+            }
+            else if (!enabled && has)
+            {
+                defines.Remove(symbol);
+                ApplyDefines(defines);
+                Debug.Log($"[GameDevPartner] Выключен адаптер {symbol}");
+            }
+        }
+
+        private static HashSet<string> GetCurrentDefines()
+        {
 #if UNITY_2021_2_OR_NEWER
             var namedTarget = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(EditorUserBuildSettings.selectedBuildTargetGroup);
-            string currentDefines = PlayerSettings.GetScriptingDefineSymbols(namedTarget);
+            string current = PlayerSettings.GetScriptingDefineSymbols(namedTarget);
 #else
             var targetGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
-            string currentDefines = PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
+            string current = PlayerSettings.GetScriptingDefineSymbolsForGroup(targetGroup);
 #endif
-
-            var defines = new HashSet<string>(currentDefines.Split(';').Where(s => !string.IsNullOrWhiteSpace(s)));
-            bool changed = false;
-
-            foreach (var kvp in AdSdkDetection)
-            {
-                bool sdkInstalled = IsTypeAvailable(kvp.Value);
-
-                if (sdkInstalled && !defines.Contains(kvp.Key))
-                {
-                    defines.Add(kvp.Key);
-                    changed = true;
-                    Debug.Log($"[GameDevPartner] Auto-detected {kvp.Key} — ad SDK found ({kvp.Value})");
-                }
-                else if (!sdkInstalled && defines.Contains(kvp.Key))
-                {
-                    defines.Remove(kvp.Key);
-                    changed = true;
-                    Debug.Log($"[GameDevPartner] Removed {kvp.Key} — ad SDK not found");
-                }
-            }
-
-            if (changed)
-            {
-                string newDefines = string.Join(";", defines);
-#if UNITY_2021_2_OR_NEWER
-                PlayerSettings.SetScriptingDefineSymbols(namedTarget, newDefines);
-#else
-                PlayerSettings.SetScriptingDefineSymbolsForGroup(targetGroup, newDefines);
-#endif
-                Debug.Log($"[GameDevPartner] Updated Scripting Define Symbols: {newDefines}");
-            }
+            return new HashSet<string>(current.Split(';').Where(s => !string.IsNullOrWhiteSpace(s)));
         }
 
-        private static bool IsTypeAvailable(string typeName)
+        private static void ApplyDefines(HashSet<string> defines)
         {
-            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try
-                {
-                    if (assembly.GetType(typeName) != null)
-                        return true;
-                }
-                catch
-                {
-                    // Some assemblies may throw on reflection — skip
-                }
-            }
-            return false;
+            string result = string.Join(";", defines);
+#if UNITY_2021_2_OR_NEWER
+            var namedTarget = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(EditorUserBuildSettings.selectedBuildTargetGroup);
+            PlayerSettings.SetScriptingDefineSymbols(namedTarget, result);
+#else
+            var targetGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
+            PlayerSettings.SetScriptingDefineSymbolsForGroup(targetGroup, result);
+#endif
         }
     }
 }
