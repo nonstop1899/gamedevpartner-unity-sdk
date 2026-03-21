@@ -52,7 +52,9 @@ namespace GameDevPartner.SDK.Editor
                 EditorGUILayout.HelpBox(
                     "Включите рекламные сети, которые используются в игре.\n" +
                     "IronSource и AppLovin — полностью автоматически (ноль кода).\n" +
-                    "Остальные — одна строка кода в callback.",
+                    "Остальные — одна строка кода в callback.\n\n" +
+                    "Универсальный способ (без галочек, для любой сети):\n" +
+                    "GameDevPartnerSDK.TrackAdRevenue(revenue, \"USD\", \"rewarded\", \"yandex_ads\");",
                     MessageType.Info);
 
                 EditorGUILayout.Space(5);
