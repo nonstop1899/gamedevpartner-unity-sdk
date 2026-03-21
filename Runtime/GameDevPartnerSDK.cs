@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -19,11 +20,23 @@ namespace GameDevPartner.SDK
         private static bool _identified;
         private static bool _autoIdentify;
 
+        // Purchase offline queue
         private readonly Queue<PurchaseEvent> _offlineQueue = new Queue<PurchaseEvent>();
         private const int MaxQueueSize = 100;
         private const string QueueKey = "gdp_offline_queue";
         private const string AttributedKey = "gdp_attributed";
         private const string PlayerIdKey = "gdp_player_id";
+
+        // Ad impression batching
+        private readonly List<AdImpressionItem> _adBatch = new List<AdImpressionItem>();
+        private readonly List<AdImpressionItem> _adOfflineQueue = new List<AdImpressionItem>();
+        private const int AdBatchSize = 50;
+        private const float AdBatchIntervalSec = 30f;
+        private const int AdMaxOfflineQueue = 500;
+        private const string AdQueueKey = "gdp_ad_offline_queue";
+        private Coroutine _adFlushCoroutine;
+        private static string _sessionId;
+        private static int _adImpressionCounter;
 
         /// <summary>
         /// Auto-initialize SDK from ScriptableObject config in Resources.
@@ -67,6 +80,8 @@ namespace GameDevPartner.SDK
             }
 
             _config = config;
+            _sessionId = Guid.NewGuid().ToString("N").Substring(0, 8);
+            _adImpressionCounter = 0;
 
             // Create persistent singleton
             if (_instance == null)
@@ -82,8 +97,9 @@ namespace GameDevPartner.SDK
 
             Log($"SDK initialized. Region={config.Region}, Debug={config.DebugMode}");
 
-            // Flush offline queue
+            // Flush offline queues
             _instance.StartCoroutine(_instance.FlushOfflineQueue());
+            _instance.StartCoroutine(_instance.FlushAdOfflineQueue());
 
             // Fetch install referrer in background (Google Play / RuStore)
             GDPInstallReferrer.FetchReferrer((referrer) =>
@@ -156,6 +172,66 @@ namespace GameDevPartner.SDK
             }
 
             _instance.StartCoroutine(_instance.DoTrackPurchase(purchase));
+        }
+
+        /// <summary>
+        /// Track an ad impression with ILAR (impression-level ad revenue) data.
+        /// Events are batched and sent every 30 seconds or when batch reaches 50 events.
+        /// Supports all major ad networks: AdMob, IronSource, AppLovin, Unity Ads, Yandex Ads.
+        /// </summary>
+        public static void TrackAdImpression(AdImpressionEvent impression)
+        {
+            if (!EnsureInitialized()) return;
+
+            if (string.IsNullOrEmpty(impression.PlayerId))
+                impression.PlayerId = _currentPlayerId;
+
+            if (string.IsNullOrEmpty(impression.PlayerId))
+            {
+                Debug.LogError("[GameDevPartner] PlayerId is required. Call IdentifyPlayer first.");
+                return;
+            }
+
+            if (impression.Revenue < 0)
+            {
+                Debug.LogError("[GameDevPartner] Ad revenue cannot be negative");
+                return;
+            }
+
+            // Auto-generate impression ID if not provided
+            if (string.IsNullOrEmpty(impression.ImpressionId))
+            {
+                impression.ImpressionId = $"{_sessionId}_{ToAdNetworkString(impression.AdNetwork)}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{_adImpressionCounter++}";
+            }
+
+            var item = new AdImpressionItem
+            {
+                player_id = impression.PlayerId,
+                ad_type = ToAdTypeString(impression.AdType),
+                ad_network = ToAdNetworkString(impression.AdNetwork),
+                ad_unit_id = impression.AdUnitId ?? "",
+                revenue = impression.Revenue,
+                currency = impression.Currency ?? "USD",
+                impression_id = impression.ImpressionId,
+            };
+
+            lock (_instance._adBatch)
+            {
+                _instance._adBatch.Add(item);
+            }
+
+            Log($"Ad impression queued: {item.ad_network}/{item.ad_type} rev={item.revenue} {item.currency}");
+
+            // Flush immediately if batch is full
+            if (_instance._adBatch.Count >= AdBatchSize)
+            {
+                _instance.FlushAdBatchNow();
+            }
+            else if (_instance._adFlushCoroutine == null)
+            {
+                // Start delayed flush timer
+                _instance._adFlushCoroutine = _instance.StartCoroutine(_instance.DelayedAdFlush());
+            }
         }
 
         #region Internal Coroutines
@@ -302,6 +378,119 @@ namespace GameDevPartner.SDK
             }
         }
 
+        // --- Ad Impression Batch Flush ---
+
+        private IEnumerator DelayedAdFlush()
+        {
+            yield return new WaitForSeconds(AdBatchIntervalSec);
+            FlushAdBatchNow();
+        }
+
+        private void FlushAdBatchNow()
+        {
+            if (_adFlushCoroutine != null)
+            {
+                StopCoroutine(_adFlushCoroutine);
+                _adFlushCoroutine = null;
+            }
+
+            List<AdImpressionItem> batch;
+            lock (_adBatch)
+            {
+                if (_adBatch.Count == 0) return;
+                batch = new List<AdImpressionItem>(_adBatch);
+                _adBatch.Clear();
+            }
+
+            StartCoroutine(DoSendAdBatch(batch));
+        }
+
+        private IEnumerator DoSendAdBatch(List<AdImpressionItem> batch)
+        {
+            var request_body = new AdRevenueBatchRequest
+            {
+                impressions = batch.ToArray()
+            };
+
+            string json = JsonUtility.ToJson(request_body);
+            Log($"Sending ad batch: {batch.Count} impressions");
+
+            using var request = CreatePost("/sdk/ad-revenue", json);
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                var response = JsonUtility.FromJson<AdRevenueResponse>(request.downloadHandler.text);
+                Log($"Ad batch sent: stored={response.data.stored}, skipped={response.data.skipped}");
+            }
+            else
+            {
+                Debug.LogWarning($"[GameDevPartner] Ad revenue batch failed: {request.error}, queuing offline");
+                EnqueueAdOffline(batch);
+            }
+        }
+
+        private IEnumerator FlushAdOfflineQueue()
+        {
+            LoadAdOfflineQueue();
+
+            if (_adOfflineQueue.Count == 0) yield break;
+
+            // Send in batches of AdBatchSize
+            while (_adOfflineQueue.Count > 0)
+            {
+                var batch = _adOfflineQueue.Take(AdBatchSize).ToList();
+
+                var request_body = new AdRevenueBatchRequest
+                {
+                    impressions = batch.ToArray()
+                };
+
+                string json = JsonUtility.ToJson(request_body);
+                Log($"Retrying offline ad batch: {batch.Count} impressions");
+
+                using var request = CreatePost("/sdk/ad-revenue", json);
+                yield return request.SendWebRequest();
+
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    _adOfflineQueue.RemoveRange(0, batch.Count);
+                    SaveAdOfflineQueue();
+                    Log($"Offline ad batch sent: {batch.Count}");
+                }
+                else
+                {
+                    Log("Offline ad flush failed, will retry later");
+                    yield break;
+                }
+
+                yield return new WaitForSeconds(1f);
+            }
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused && _adBatch.Count > 0)
+            {
+                // App going to background — flush any pending ad impressions
+                FlushAdBatchNow();
+            }
+        }
+
+        private void OnApplicationQuit()
+        {
+            // Save any pending ad impressions to offline queue before exit
+            if (_adBatch.Count > 0)
+            {
+                lock (_adBatch)
+                {
+                    _adOfflineQueue.AddRange(_adBatch);
+                    _adBatch.Clear();
+                    SaveAdOfflineQueue();
+                }
+            }
+        }
+
         #endregion
 
         #region HTTP Helpers
@@ -374,7 +563,7 @@ namespace GameDevPartner.SDK
 
         #endregion
 
-        #region Offline Queue
+        #region Offline Queue (Purchases)
 
         private void EnqueueOffline(PurchaseEvent purchase)
         {
@@ -417,6 +606,44 @@ namespace GameDevPartner.SDK
 
         #endregion
 
+        #region Offline Queue (Ad Impressions)
+
+        private void EnqueueAdOffline(List<AdImpressionItem> items)
+        {
+            _adOfflineQueue.AddRange(items);
+            // Trim to max size (drop oldest)
+            while (_adOfflineQueue.Count > AdMaxOfflineQueue)
+            {
+                _adOfflineQueue.RemoveAt(0);
+            }
+            SaveAdOfflineQueue();
+        }
+
+        private void SaveAdOfflineQueue()
+        {
+            var wrapper = new AdQueueWrapper { items = new List<AdImpressionItem>(_adOfflineQueue) };
+            string json = JsonUtility.ToJson(wrapper);
+            PlayerPrefs.SetString(AdQueueKey, json);
+            PlayerPrefs.Save();
+        }
+
+        private void LoadAdOfflineQueue()
+        {
+            string json = PlayerPrefs.GetString(AdQueueKey, "");
+            if (string.IsNullOrEmpty(json)) return;
+            try
+            {
+                var wrapper = JsonUtility.FromJson<AdQueueWrapper>(json);
+                if (wrapper?.items != null)
+                {
+                    _adOfflineQueue.AddRange(wrapper.items);
+                }
+            }
+            catch { /* corrupted data, ignore */ }
+        }
+
+        #endregion
+
         #region Utility
 
         private static string ToSourceString(PaymentSource source)
@@ -429,6 +656,30 @@ namespace GameDevPartner.SDK
                 case PaymentSource.RuStore: return "rustore";
                 case PaymentSource.TBank: return "tbank";
                 case PaymentSource.Web: return "web";
+                default: return "other";
+            }
+        }
+
+        private static string ToAdTypeString(AdType adType)
+        {
+            switch (adType)
+            {
+                case AdType.Rewarded: return "rewarded";
+                case AdType.Interstitial: return "interstitial";
+                case AdType.Banner: return "banner";
+                default: return "banner";
+            }
+        }
+
+        private static string ToAdNetworkString(AdNetwork network)
+        {
+            switch (network)
+            {
+                case AdNetwork.AdMob: return "admob";
+                case AdNetwork.IronSource: return "ironsource";
+                case AdNetwork.AppLovin: return "applovin";
+                case AdNetwork.UnityAds: return "unity_ads";
+                case AdNetwork.YandexAds: return "yandex_ads";
                 default: return "other";
             }
         }

@@ -69,11 +69,51 @@ namespace GameDevPartner.SDK
         public float net_amount;
     }
 
-    // --- Offline Queue Wrapper ---
+    // --- Ad Revenue DTOs ---
+
+    [Serializable]
+    internal class AdImpressionItem
+    {
+        public string player_id;
+        public string ad_type;
+        public string ad_network;
+        public string ad_unit_id;
+        public double revenue;
+        public string currency;
+        public string impression_id;
+    }
+
+    [Serializable]
+    internal class AdRevenueBatchRequest
+    {
+        public AdImpressionItem[] impressions;
+    }
+
+    [Serializable]
+    internal class AdRevenueResponse
+    {
+        public bool success;
+        public AdRevenueData data;
+    }
+
+    [Serializable]
+    internal class AdRevenueData
+    {
+        public int stored;
+        public int skipped;
+    }
+
+    // --- Offline Queue Wrappers ---
 
     [Serializable]
     internal class QueueWrapper
     {
         public List<PurchaseEvent> items;
+    }
+
+    [Serializable]
+    internal class AdQueueWrapper
+    {
+        public List<AdImpressionItem> items;
     }
 }
