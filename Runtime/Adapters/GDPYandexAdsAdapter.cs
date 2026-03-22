@@ -1,90 +1,58 @@
 #if GDP_YANDEX_ADS
 using System;
 using UnityEngine;
-using YandexMobileAds;
-using YandexMobileAds.Base;
 
 namespace GameDevPartner.SDK.Adapters
 {
     /// <summary>
-    /// Yandex Mobile Ads adapter — automatic ad revenue tracking.
+    /// Yandex Ads helper for ad revenue tracking.
+    /// Does NOT reference YandexMobileAds types (they live in Assembly-CSharp).
     ///
-    /// EASIEST integration (1 line after ad load):
-    ///   rewardedAd = args.RewardedAd;
-    ///   GDPYandexAdsAdapter.AttachTo(rewardedAd, "R-M-XXXXXX-X");
+    /// Integration (1 line in your OnAdImpression callback):
+    ///   rewardedAd.OnAdImpression += (sender, data) =>
+    ///       GDPYandexAdsAdapter.TrackImpression("rewarded", adUnitId, data.rawData);
     ///
-    /// That's it! Revenue from every impression will be tracked automatically.
-    /// Works with RewardedAd, Interstitial, and Banner.
+    /// Or use the universal method (no adapter needed):
+    ///   GameDevPartnerSDK.TrackAdRevenue(revenue, "USD", "rewarded", "yandex_ads");
     /// </summary>
     public static class GDPYandexAdsAdapter
     {
         private static bool _autoEnabled;
 
-        /// <summary>
-        /// Called automatically by SDK. Marks adapter as active.
-        /// </summary>
         public static void EnableAutoTracking()
         {
             if (_autoEnabled) return;
             _autoEnabled = true;
             Debug.Log("[GameDevPartner] Yandex Ads tracking enabled. " +
-                      "Use GDPYandexAdsAdapter.AttachTo(ad, adUnitId) after loading ads.");
+                      "Add 1 line in your OnAdImpression callback:\n" +
+                      "  GDPYandexAdsAdapter.TrackImpression(\"rewarded\", adUnitId, data.rawData);");
         }
 
         /// <summary>
-        /// Attach to a RewardedAd — automatically tracks revenue from OnAdImpression.
-        /// Call once after ad is loaded:
-        ///   rewardedAd = args.RewardedAd;
-        ///   GDPYandexAdsAdapter.AttachTo(rewardedAd, "R-M-XXXXXX-X");
+        /// Track impression from Yandex ImpressionData.rawData JSON string.
+        /// Call from your ad's OnAdImpression callback:
+        ///   rewardedAd.OnAdImpression += (sender, data) =>
+        ///       GDPYandexAdsAdapter.TrackImpression("rewarded", adUnitId, data.rawData);
         /// </summary>
-        public static void AttachTo(RewardedAd ad, string adUnitId = "")
+        /// <param name="adType">"rewarded", "interstitial", or "banner"</param>
+        /// <param name="adUnitId">Your Yandex ad unit ID (e.g. "R-M-XXXXXX-X")</param>
+        /// <param name="impressionRawData">ImpressionData.rawData JSON string</param>
+        public static void TrackImpression(string adType, string adUnitId, string impressionRawData)
         {
-            if (ad == null) return;
-            ad.OnAdImpression += (sender, data) =>
-                TrackFromImpressionData(AdType.Rewarded, adUnitId, data);
-        }
-
-        /// <summary>
-        /// Attach to an Interstitial — automatically tracks revenue from OnAdImpression.
-        /// </summary>
-        public static void AttachTo(Interstitial ad, string adUnitId = "")
-        {
-            if (ad == null) return;
-            ad.OnAdImpression += (sender, data) =>
-                TrackFromImpressionData(AdType.Interstitial, adUnitId, data);
-        }
-
-        /// <summary>
-        /// Attach to a Banner — automatically tracks revenue from OnImpression.
-        /// </summary>
-        public static void AttachTo(Banner ad, string adUnitId = "")
-        {
-            if (ad == null) return;
-            ad.OnImpression += (sender, data) =>
-                TrackFromImpressionData(AdType.Banner, adUnitId, data);
-        }
-
-        /// <summary>
-        /// Track impression from Yandex ImpressionData object.
-        /// Called automatically by AttachTo, but can also be used directly.
-        /// </summary>
-        public static void TrackFromImpressionData(AdType adType, string adUnitId, ImpressionData impressionData)
-        {
-            if (impressionData == null || string.IsNullOrEmpty(impressionData.rawData)) return;
+            if (string.IsNullOrEmpty(impressionRawData)) return;
 
             try
             {
-                var json = JsonUtility.FromJson<YandexImpressionJson>(impressionData.rawData);
+                var json = JsonUtility.FromJson<YandexImpressionJson>(impressionRawData);
                 if (json.revenue > 0)
                 {
-                    GameDevPartnerSDK.TrackAdImpression(new AdImpressionEvent
-                    {
-                        AdType = adType,
-                        AdNetwork = AdNetwork.YandexAds,
-                        AdUnitId = adUnitId,
-                        Revenue = json.revenue,
-                        Currency = string.IsNullOrEmpty(json.currency) ? "USD" : json.currency,
-                    });
+                    GameDevPartnerSDK.TrackAdRevenue(
+                        json.revenue,
+                        string.IsNullOrEmpty(json.currency) ? "USD" : json.currency,
+                        adType,
+                        "yandex_ads",
+                        adUnitId
+                    );
                 }
             }
             catch (Exception e)
@@ -96,18 +64,10 @@ namespace GameDevPartner.SDK.Adapters
         /// <summary>
         /// Track impression with known revenue (manual).
         /// </summary>
-        public static void TrackImpression(AdType adType, string adUnitId, double revenue, string currency = "USD")
+        public static void TrackManual(string adType, string adUnitId, double revenue, string currency = "USD")
         {
             if (revenue <= 0) return;
-
-            GameDevPartnerSDK.TrackAdImpression(new AdImpressionEvent
-            {
-                AdType = adType,
-                AdNetwork = AdNetwork.YandexAds,
-                AdUnitId = adUnitId,
-                Revenue = revenue,
-                Currency = currency,
-            });
+            GameDevPartnerSDK.TrackAdRevenue(revenue, currency, adType, "yandex_ads", adUnitId);
         }
 
         [Serializable]

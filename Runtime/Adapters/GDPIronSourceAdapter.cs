@@ -5,74 +5,50 @@ using UnityEngine;
 namespace GameDevPartner.SDK.Adapters
 {
     /// <summary>
-    /// IronSource / LevelPlay adapter for automatic ad revenue tracking.
-    /// Hooks into the ImpressionDataReady event.
+    /// IronSource / LevelPlay helper for ad revenue tracking.
+    /// Does NOT reference IronSource types (may be in Assembly-CSharp).
     ///
-    /// Usage:
-    ///   1. Add GDP_IRONSOURCE to Scripting Define Symbols
-    ///   2. Call GDPIronSourceAdapter.Enable() after IronSource SDK init
+    /// Integration (1 line in your impression callback):
+    ///   IronSourceEvents.onImpressionDataReadyEvent += (data) =>
+    ///       GDPIronSourceAdapter.TrackImpression(data.revenue ?? 0, data.adUnit, data.instanceName);
+    ///
+    /// Or universal:
+    ///   GameDevPartnerSDK.TrackAdRevenue(data.revenue.Value, "USD", "rewarded", "ironsource");
     /// </summary>
     public static class GDPIronSourceAdapter
     {
         private static bool _enabled;
 
-        /// <summary>
-        /// Enable automatic ad revenue tracking from IronSource.
-        /// Call once after IronSource.Agent.init().
-        /// </summary>
         public static void Enable()
         {
             if (_enabled) return;
             _enabled = true;
-
-            IronSourceEvents.onImpressionDataReadyEvent += OnImpressionData;
-            Debug.Log("[GameDevPartner] IronSource ad revenue adapter enabled");
+            Debug.Log("[GameDevPartner] IronSource tracking enabled. " +
+                      "Add 1 line in your impression callback:\n" +
+                      "  IronSourceEvents.onImpressionDataReadyEvent += (data) =>\n" +
+                      "      GDPIronSourceAdapter.TrackImpression(data.revenue ?? 0, data.adUnit, data.instanceName);");
         }
 
         /// <summary>
-        /// Disable tracking and unsubscribe from events.
+        /// Track impression from IronSource ImpressionData.
         /// </summary>
-        public static void Disable()
+        /// <param name="revenue">data.revenue value</param>
+        /// <param name="adUnit">"rewarded_video", "interstitial", "banner"</param>
+        /// <param name="instanceId">data.instanceName or data.instanceId</param>
+        public static void TrackImpression(double revenue, string adUnit, string instanceId = "")
         {
-            if (!_enabled) return;
-            _enabled = false;
-            IronSourceEvents.onImpressionDataReadyEvent -= OnImpressionData;
-        }
-
-        private static void OnImpressionData(IronSourceImpressionData data)
-        {
-            if (data == null) return;
-
-            double revenue = data.revenue ?? 0;
             if (revenue <= 0) return;
 
-            AdType adType;
-            string adInstance = data.instanceName ?? data.instanceId ?? "";
-
-            switch (data.adUnit?.ToLower())
+            string adType;
+            switch (adUnit?.ToLower())
             {
-                case "rewarded_video":
-                    adType = AdType.Rewarded;
-                    break;
-                case "interstitial":
-                    adType = AdType.Interstitial;
-                    break;
-                case "banner":
-                    adType = AdType.Banner;
-                    break;
-                default:
-                    adType = AdType.Interstitial;
-                    break;
+                case "rewarded_video": adType = "rewarded"; break;
+                case "interstitial": adType = "interstitial"; break;
+                case "banner": adType = "banner"; break;
+                default: adType = "interstitial"; break;
             }
 
-            GameDevPartnerSDK.TrackAdImpression(new AdImpressionEvent
-            {
-                AdType = adType,
-                AdNetwork = AdNetwork.IronSource,
-                AdUnitId = adInstance,
-                Revenue = revenue,
-                Currency = "USD", // IronSource always reports in USD
-            });
+            GameDevPartnerSDK.TrackAdRevenue(revenue, "USD", adType, "ironsource", instanceId ?? "");
         }
     }
 }
