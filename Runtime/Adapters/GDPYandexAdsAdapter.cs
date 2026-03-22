@@ -14,7 +14,7 @@ namespace GameDevPartner.SDK.Adapters
     ///   GDPYandexAdsAdapter.AttachTo(rewardedAd, "R-M-XXXXXX-X");
     ///
     /// That's it! Revenue from every impression will be tracked automatically.
-    /// Works with RewardedAd, InterstitialAd, and BannerAdView.
+    /// Works with RewardedAd, Interstitial, and Banner.
     /// </summary>
     public static class GDPYandexAdsAdapter
     {
@@ -45,9 +45,9 @@ namespace GameDevPartner.SDK.Adapters
         }
 
         /// <summary>
-        /// Attach to an InterstitialAd — automatically tracks revenue from OnAdImpression.
+        /// Attach to an Interstitial — automatically tracks revenue from OnAdImpression.
         /// </summary>
-        public static void AttachTo(InterstitialAd ad, string adUnitId = "")
+        public static void AttachTo(Interstitial ad, string adUnitId = "")
         {
             if (ad == null) return;
             ad.OnAdImpression += (sender, data) =>
@@ -55,20 +55,18 @@ namespace GameDevPartner.SDK.Adapters
         }
 
         /// <summary>
-        /// Attach to a BannerAdView — automatically tracks revenue from OnAdImpression.
+        /// Attach to a Banner — automatically tracks revenue from OnImpression.
         /// </summary>
-        public static void AttachTo(BannerAdView ad, string adUnitId = "")
+        public static void AttachTo(Banner ad, string adUnitId = "")
         {
             if (ad == null) return;
-            ad.OnAdImpression += (sender, data) =>
+            ad.OnImpression += (sender, data) =>
                 TrackFromImpressionData(AdType.Banner, adUnitId, data);
         }
 
         /// <summary>
         /// Track impression from Yandex ImpressionData object.
-        /// Called automatically by AttachTo, but can also be used directly:
-        ///   rewardedAd.OnAdImpression += (s, data) =>
-        ///       GDPYandexAdsAdapter.TrackFromImpressionData(AdType.Rewarded, "unit_id", data);
+        /// Called automatically by AttachTo, but can also be used directly.
         /// </summary>
         public static void TrackFromImpressionData(AdType adType, string adUnitId, ImpressionData impressionData)
         {
