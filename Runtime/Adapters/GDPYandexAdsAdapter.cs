@@ -1,19 +1,20 @@
 #if GDP_YANDEX_ADS
 using System;
 using UnityEngine;
+using YandexMobileAds;
+using YandexMobileAds.Base;
 
 namespace GameDevPartner.SDK.Adapters
 {
     /// <summary>
-    /// Yandex Mobile Ads adapter for ad revenue tracking.
+    /// Yandex Mobile Ads adapter — automatic ad revenue tracking.
     ///
-    /// AUTO MODE (recommended):
-    ///   SDK calls EnableAutoTracking() automatically. Logs that tracking is active.
-    ///   Developer calls TrackFromImpressionData() from their ad OnImpression callback.
+    /// EASIEST integration (1 line after ad load):
+    ///   rewardedAd = args.RewardedAd;
+    ///   GDPYandexAdsAdapter.AttachTo(rewardedAd, "R-M-XXXXXX-X");
     ///
-    /// Minimal integration (1 line per ad type):
-    ///   rewardedAd.OnImpression += (_, data) =>
-    ///       GDPYandexAdsAdapter.TrackFromImpressionData(AdType.Rewarded, adUnitId, data);
+    /// That's it! Revenue from every impression will be tracked automatically.
+    /// Works with RewardedAd, InterstitialAd, and BannerAdView.
     /// </summary>
     public static class GDPYandexAdsAdapter
     {
@@ -27,11 +28,75 @@ namespace GameDevPartner.SDK.Adapters
             if (_autoEnabled) return;
             _autoEnabled = true;
             Debug.Log("[GameDevPartner] Yandex Ads tracking enabled. " +
-                      "Call TrackFromImpressionData() from your ad OnImpression callbacks.");
+                      "Use GDPYandexAdsAdapter.AttachTo(ad, adUnitId) after loading ads.");
         }
 
         /// <summary>
-        /// Track ad impression with known revenue.
+        /// Attach to a RewardedAd — automatically tracks revenue from OnAdImpression.
+        /// Call once after ad is loaded:
+        ///   rewardedAd = args.RewardedAd;
+        ///   GDPYandexAdsAdapter.AttachTo(rewardedAd, "R-M-XXXXXX-X");
+        /// </summary>
+        public static void AttachTo(RewardedAd ad, string adUnitId = "")
+        {
+            if (ad == null) return;
+            ad.OnAdImpression += (sender, data) =>
+                TrackFromImpressionData(AdType.Rewarded, adUnitId, data);
+        }
+
+        /// <summary>
+        /// Attach to an InterstitialAd — automatically tracks revenue from OnAdImpression.
+        /// </summary>
+        public static void AttachTo(InterstitialAd ad, string adUnitId = "")
+        {
+            if (ad == null) return;
+            ad.OnAdImpression += (sender, data) =>
+                TrackFromImpressionData(AdType.Interstitial, adUnitId, data);
+        }
+
+        /// <summary>
+        /// Attach to a BannerAdView — automatically tracks revenue from OnAdImpression.
+        /// </summary>
+        public static void AttachTo(BannerAdView ad, string adUnitId = "")
+        {
+            if (ad == null) return;
+            ad.OnAdImpression += (sender, data) =>
+                TrackFromImpressionData(AdType.Banner, adUnitId, data);
+        }
+
+        /// <summary>
+        /// Track impression from Yandex ImpressionData object.
+        /// Called automatically by AttachTo, but can also be used directly:
+        ///   rewardedAd.OnAdImpression += (s, data) =>
+        ///       GDPYandexAdsAdapter.TrackFromImpressionData(AdType.Rewarded, "unit_id", data);
+        /// </summary>
+        public static void TrackFromImpressionData(AdType adType, string adUnitId, ImpressionData impressionData)
+        {
+            if (impressionData == null || string.IsNullOrEmpty(impressionData.rawData)) return;
+
+            try
+            {
+                var json = JsonUtility.FromJson<YandexImpressionJson>(impressionData.rawData);
+                if (json.revenue > 0)
+                {
+                    GameDevPartnerSDK.TrackAdImpression(new AdImpressionEvent
+                    {
+                        AdType = adType,
+                        AdNetwork = AdNetwork.YandexAds,
+                        AdUnitId = adUnitId,
+                        Revenue = json.revenue,
+                        Currency = string.IsNullOrEmpty(json.currency) ? "USD" : json.currency,
+                    });
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[GameDevPartner] Failed to parse Yandex impression data: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Track impression with known revenue (manual).
         /// </summary>
         public static void TrackImpression(AdType adType, string adUnitId, double revenue, string currency = "USD")
         {
@@ -47,30 +112,8 @@ namespace GameDevPartner.SDK.Adapters
             });
         }
 
-        /// <summary>
-        /// Track impression from Yandex ImpressionData JSON.
-        /// Call this from your ad's OnImpression callback.
-        /// </summary>
-        public static void TrackFromImpressionData(AdType adType, string adUnitId, string impressionDataJson)
-        {
-            if (string.IsNullOrEmpty(impressionDataJson)) return;
-
-            try
-            {
-                var data = JsonUtility.FromJson<YandexImpressionData>(impressionDataJson);
-                if (data.revenue > 0)
-                {
-                    TrackImpression(adType, adUnitId, data.revenue, data.currency ?? "USD");
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[GameDevPartner] Failed to parse Yandex impression data: {e.Message}");
-            }
-        }
-
         [Serializable]
-        private class YandexImpressionData
+        private class YandexImpressionJson
         {
             public double revenue;
             public string currency;

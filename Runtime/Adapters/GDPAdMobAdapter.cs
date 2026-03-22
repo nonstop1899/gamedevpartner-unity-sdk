@@ -44,8 +44,10 @@ namespace GameDevPartner.SDK.Adapters
 
         /// <summary>
         /// Attach ad revenue tracking to a RewardedAd.
-        /// Call this after the ad is loaded.
+        /// Call this after the ad is loaded:
+        ///   GDPAdMobAdapter.AttachTo(rewardedAd, "ca-app-pub-XXX/YYY");
         /// </summary>
+        public static void AttachTo(RewardedAd ad, string adUnitId = null) => TrackRewarded(ad, adUnitId);
         public static void TrackRewarded(RewardedAd ad, string adUnitId = null)
         {
             if (ad == null) return;
@@ -59,6 +61,7 @@ namespace GameDevPartner.SDK.Adapters
         /// Attach ad revenue tracking to an InterstitialAd.
         /// Call this after the ad is loaded.
         /// </summary>
+        public static void AttachTo(InterstitialAd ad, string adUnitId = null) => TrackInterstitial(ad, adUnitId);
         public static void TrackInterstitial(InterstitialAd ad, string adUnitId = null)
         {
             if (ad == null) return;
@@ -72,6 +75,7 @@ namespace GameDevPartner.SDK.Adapters
         /// Attach ad revenue tracking to a BannerView.
         /// Call this after the ad is loaded.
         /// </summary>
+        public static void AttachTo(BannerView banner, string adUnitId = null) => TrackBanner(banner, adUnitId);
         public static void TrackBanner(BannerView banner, string adUnitId = null)
         {
             if (banner == null) return;

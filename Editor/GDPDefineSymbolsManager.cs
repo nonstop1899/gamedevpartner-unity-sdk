@@ -31,11 +31,11 @@ namespace GameDevPartner.SDK.Editor
 
         public static readonly Dictionary<string, string> AdSdkHints = new Dictionary<string, string>
         {
-            { "GDP_ADMOB",       "После загрузки рекламы: GDPAdMobAdapter.TrackRewarded(ad)" },
+            { "GDP_ADMOB",       "1 строка: GDPAdMobAdapter.AttachTo(rewardedAd, adUnitId)" },
             { "GDP_IRONSOURCE",  "Полностью автоматически — ноль кода" },
             { "GDP_APPLOVIN",    "Полностью автоматически — ноль кода" },
-            { "GDP_UNITY_ADS",   "В callback: GDPUnityAdsAdapter.TrackShowComplete(id)" },
-            { "GDP_YANDEX_ADS",  "В callback: GDPYandexAdsAdapter.TrackFromImpressionData(...)\nИли универсально: GameDevPartnerSDK.TrackAdRevenue(revenue, \"USD\", \"rewarded\", \"yandex_ads\")" },
+            { "GDP_UNITY_ADS",   "1 строка: GDPUnityAdsAdapter.TrackShowComplete(id)" },
+            { "GDP_YANDEX_ADS",  "1 строка: GDPYandexAdsAdapter.AttachTo(rewardedAd, adUnitId)" },
         };
 
         public static bool HasDefine(string symbol)
