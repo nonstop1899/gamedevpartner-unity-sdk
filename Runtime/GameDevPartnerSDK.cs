@@ -158,6 +158,51 @@ namespace GameDevPartner.SDK
             _instance.StartCoroutine(_instance.DoTrackPurchase(purchase));
         }
 
+        /// <summary>
+        /// Track an ad impression with revenue. Call from any ad network callback.
+        ///
+        /// For Unity Ads standard SDK (without LevelPlay/Mediation), pass <paramref name="revenue"/>=0 —
+        /// the platform will fetch exact revenue from Unity Ads Reporting API nightly and
+        /// link it to impressions by (gameId, network, date).
+        /// </summary>
+        /// <param name="revenue">Revenue amount. Use 0 for Unity Ads standard (revenue imported via Reporting API).</param>
+        /// <param name="currency">Currency code (USD, RUB, EUR)</param>
+        /// <param name="adType">"rewarded" | "interstitial" | "banner"</param>
+        /// <param name="adNetwork">"unity_ads" | "yandex_ads" | "admob" | "ironsource" | "applovin" | "other"</param>
+        /// <param name="adUnitId">Ad unit / placement ID (optional)</param>
+        public static void TrackAdRevenue(double revenue, string currency, string adType, string adNetwork, string adUnitId = null)
+        {
+            if (!EnsureInitialized()) return;
+
+            if (string.IsNullOrEmpty(_currentPlayerId))
+            {
+                Debug.LogError("[GameDevPartner] PlayerId is required. Call IdentifyPlayer first.");
+                return;
+            }
+
+            if (revenue < 0)
+            {
+                Debug.LogError("[GameDevPartner] Revenue cannot be negative");
+                return;
+            }
+
+            // Generate unique impression ID: guid
+            var impressionId = System.Guid.NewGuid().ToString("N");
+
+            var dto = new AdImpressionDto
+            {
+                player_id = _currentPlayerId,
+                ad_type = adType ?? "rewarded",
+                ad_network = adNetwork ?? "other",
+                ad_unit_id = adUnitId,
+                revenue = (float)revenue,
+                currency = currency ?? "USD",
+                impression_id = impressionId,
+            };
+
+            _instance.StartCoroutine(_instance.DoTrackAdRevenue(dto));
+        }
+
         #region Internal Coroutines
 
         private IEnumerator DoIdentify(string playerId, string referrer)
@@ -226,6 +271,25 @@ namespace GameDevPartner.SDK
             {
                 Debug.LogWarning($"[GameDevPartner] Purchase tracking failed: {request.error}, queuing offline");
                 EnqueueOffline(purchase);
+            }
+        }
+
+        private IEnumerator DoTrackAdRevenue(AdImpressionDto dto)
+        {
+            var body = new AdRevenueRequest { impressions = new System.Collections.Generic.List<AdImpressionDto> { dto } };
+            string json = JsonUtility.ToJson(body);
+            Log($"TrackAdRevenue: {json}");
+
+            using var request = CreatePost("/sdk/ad-revenue", json);
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                Log($"Ad revenue tracked: {request.downloadHandler.text}");
+            }
+            else
+            {
+                Debug.LogWarning($"[GameDevPartner] Ad revenue tracking failed: {request.error}");
             }
         }
 

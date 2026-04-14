@@ -29,6 +29,24 @@ namespace GameDevPartner.SDK
         public string receipt_data;
     }
 
+    [Serializable]
+    internal class AdImpressionDto
+    {
+        public string player_id;
+        public string ad_type;       // "rewarded" | "interstitial" | "banner"
+        public string ad_network;    // "unity_ads" | "yandex_ads" | "admob" | "ironsource" | "applovin" | "other"
+        public string ad_unit_id;
+        public float revenue;        // May be 0 for Unity Ads — exact revenue will be fetched server-side
+        public string currency;
+        public string impression_id; // Unique per impression
+    }
+
+    [Serializable]
+    internal class AdRevenueRequest
+    {
+        public List<AdImpressionDto> impressions;
+    }
+
     // --- Response DTOs (deserialized from JSON) ---
 
     [Serializable]
