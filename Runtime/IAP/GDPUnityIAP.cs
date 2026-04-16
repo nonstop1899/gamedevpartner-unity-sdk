@@ -1,4 +1,6 @@
-#if UNITY_PURCHASING
+// Compilation of this file is gated by the asmdef defineConstraints: ["UNITY_PURCHASING"].
+// The whole GameDevPartner.SDK.IAP assembly is skipped by Unity when the Unity IAP package
+// is not installed — no missing-reference errors in that case.
 using System;
 using UnityEngine;
 using UnityEngine.Purchasing;
@@ -91,4 +93,3 @@ namespace GameDevPartner.SDK
         }
     }
 }
-#endif

@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.6.2] - 2026-04-17
+### Fixed
+- `GDPUnityIAP.cs` moved into its own sub-assembly `GameDevPartner.SDK.IAP` under `Runtime/IAP/` with `defineConstraints: ["UNITY_PURCHASING"]`. The sub-asmdef is completely skipped by Unity when Unity IAP is not installed, eliminating `Failed to resolve assembly` errors that prevented the Editor menu from registering in 2.6.1.
+- `#if UNITY_PURCHASING` guard removed from the source file — no longer needed since compilation is now gated at the asmdef level.
+
 ## [2.6.1] - 2026-04-17
 ### Fixed
 - Runtime asmdef no longer hard-references `Unity.Purchasing`. Previously, projects without Unity IAP installed failed to compile the entire SDK assembly (CS0246 on `ConfigurationBuilder`, `IStoreListener`, etc.), which also prevented the `Window → GameDevPartner` editor menu from registering. `GDPUnityIAP.cs` is already guarded by `#if UNITY_PURCHASING`, so the reference is only needed transparently when the package is installed — `Unity.Purchasing` is auto-referenced.
