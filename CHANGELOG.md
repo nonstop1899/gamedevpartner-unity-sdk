@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.6.1] - 2026-04-17
+### Fixed
+- Runtime asmdef no longer hard-references `Unity.Purchasing`. Previously, projects without Unity IAP installed failed to compile the entire SDK assembly (CS0246 on `ConfigurationBuilder`, `IStoreListener`, etc.), which also prevented the `Window → GameDevPartner` editor menu from registering. `GDPUnityIAP.cs` is already guarded by `#if UNITY_PURCHASING`, so the reference is only needed transparently when the package is installed — `Unity.Purchasing` is auto-referenced.
+
 ## [2.6.0] - 2026-04-15
 ### Added
 - `GameDevPartnerSDK.TrackAdRevenue(revenue, currency, adType, adNetwork, adUnitId)` — universal ad impression tracker

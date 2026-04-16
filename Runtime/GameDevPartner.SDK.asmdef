@@ -1,9 +1,7 @@
 {
   "name": "GameDevPartner.SDK",
   "rootNamespace": "GameDevPartner.SDK",
-  "references": [
-    "Unity.Purchasing"
-  ],
+  "references": [],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
